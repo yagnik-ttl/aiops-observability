@@ -1,0 +1,51 @@
+# otel-collector/config.yaml
+receivers:
+  otlp:
+    protocols:
+      grpc:
+        endpoint: 0.0.0.0:14317
+      http:
+        endpoint: 0.0.0.0:14318
+
+processors:
+  batch:
+    timeout: 1s
+    send_batch_size: 1024
+
+exporters:
+  logging:
+    loglevel: debug
+  
+  prometheus:
+    endpoint: 0.0.0.0:8889
+    namespace: flask_app
+    send_timestamps: true
+    metric_expiration: 180m
+    # Remove the problematic configuration
+    # resource_to_telemetry_conversion: true
+  
+  loki:
+    endpoint: http://loki:3100/loki/api/v1/push
+    format: json
+  
+  otlp/tempo:
+    endpoint: tempo:14317
+    tls:
+      insecure: true
+
+service:
+  pipelines:
+    traces:
+      receivers: [otlp]
+      processors: [batch]
+      exporters: [logging, otlp/tempo]
+    
+    metrics:
+      receivers: [otlp]
+      processors: [batch]
+      exporters: [logging, prometheus]
+    
+    logs:
+      receivers: [otlp]
+      processors: [batch]
+      exporters: [logging, loki]

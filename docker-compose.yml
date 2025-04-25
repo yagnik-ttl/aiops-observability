@@ -1,0 +1,106 @@
+version: '3.8'
+
+services:
+  # Our Flask application
+  flask-app:
+    build:
+      context: ./app
+    ports:
+      - "5000:5000"
+    depends_on:
+      - otel-collector
+    networks:
+      - observability-network
+    volumes:
+      - ./app:/app
+    environment:
+      - OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector:14317
+
+  # OpenTelemetry Collector
+  otel-collector:
+    image: otel/opentelemetry-collector-contrib:0.60.0
+    command: ["--config=/etc/otel-collector/config.yaml"]
+    volumes:
+      - ./otel-collector/config.yaml:/etc/otel-collector/config.yaml
+    ports:
+      - "14317:14317"
+      - "14318:14318"
+      - "8889:8889"
+    depends_on:
+      - prometheus
+      - loki
+      - tempo
+    networks:
+      - observability-network
+
+  # Prometheus for metrics
+  prometheus:
+    image: prom/prometheus:latest
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--storage.tsdb.path=/prometheus"
+      - "--web.console.libraries=/usr/share/prometheus/console_libraries"
+      - "--web.console.templates=/usr/share/prometheus/consoles"
+    volumes:
+      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml
+      - prometheus_data:/prometheus
+    ports:
+      - "9090:9090"
+    networks:
+      - observability-network
+
+  # Loki for logs
+  loki:
+    image: grafana/loki:2.7.0
+    ports:
+      - "3100:3100"
+    command: -config.file=/etc/loki/local-config.yaml
+    volumes:
+      - loki_data:/loki
+    networks:
+      - observability-network
+
+  # Tempo for traces
+  tempo:
+    image: grafana/tempo:latest
+    user: root  # Run as root to avoid permission issues
+    command: ["-config.file=/etc/tempo.yaml"]
+    volumes:
+      - ./tempo/tempo.yaml:/etc/tempo.yaml
+      - tempo_data:/tmp/tempo
+    ports:
+      - "3200:3200"
+    expose:
+      - "14317"
+    networks:
+      - observability-network
+
+  # Grafana for visualization
+  grafana:
+#    image: grafana/grafana:9.3.6
+    image: grafana/grafana:11.6.1
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./grafana/datasources:/etc/grafana/provisioning/datasources
+#    environment:
+#      - GF_AUTH_ANONYMOUS_ENABLED=true
+#      - GF_AUTH_ANONYMOUS_ORG_ROLE=Admin
+#      - GF_AUTH_DISABLE_LOGIN_FORM=true
+    ports:
+      - "3000:3000"
+    depends_on:
+      - prometheus
+      - loki
+      - tempo
+    networks:
+      - observability-network
+
+networks:
+  observability-network:
+    driver: bridge
+
+volumes:
+  prometheus_data:
+  loki_data:
+  tempo_data:
+  grafana_data:
